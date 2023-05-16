@@ -1,17 +1,21 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, request
+from flask_cors import CORS, cross_origin
+from helper import *
 import pickle
 import soundfile 
 import librosa 
 import numpy as np
-import pyaudio
-import wave
+import os
+from deepface import DeepFace
+from PIL import Image
 
 app = Flask(__name__)
-WAVE_OUTPUT_FILENAME = "00-01-01-.wav"
+cors = CORS(app)
 @app.route('/',methods=['GET'])
 def voice_recog():
     model = pickle.load(open('model.pkl', 'rb'))
-    take_input()
+    index = request.args.get('index')
+    take_input(index)
     sample = extract_feature('00-01-01-.wav', mfcc=True, chroma=True, mel=True)
     sample=sample.reshape(1,-1)
     y_pred=model.predict(sample.reshape(1,-1))
@@ -33,36 +37,19 @@ def extract_feature(file_name, mfcc, chroma, mel):
             result=np.hstack((result, mel))
     return result
 
-def take_input():
+@app.route("/face",methods=['POST'])
+def face_rec():
+    data=request.json
+    image=data.get('image')
 
-    FORMAT = pyaudio.paInt16
-    CHANNELS = 1
-    RATE = 44100
-    CHUNK = 512
-    RECORD_SECONDS = 5
-    index = 1
-    audio = pyaudio.PyAudio()
-    print("recording via index "+str(index))
+    result = DeepFace.find(img_path = image, db_path = "./datasets/",model_name='Facenet512',enforce_detection=False)[0]
 
-    stream = audio.open(format=FORMAT, channels=CHANNELS,
-                    rate=RATE, input=True,input_device_index = index,
-                    frames_per_buffer=CHUNK)
-    print ("recording started")
-    Recordframes = []
-    
-    for i in range(0, int(RATE / CHUNK * RECORD_SECONDS)):
-        data = stream.read(CHUNK)
-        Recordframes.append(data)
-    print ("recording stopped")  
-    save_audio(Recordframes, FORMAT, CHANNELS, audio, RATE)
+    print(result)
+    if result.empty:
+        return {"status":"user_not_found"}
+    else:
+        return {"status":"user_found"}
 
-def save_audio(Recordframes, FORMAT, CHANNELS, audio, RATE):
-    waveFile = wave.open(WAVE_OUTPUT_FILENAME, 'wb')
-    waveFile.setnchannels(CHANNELS)
-    waveFile.setsampwidth(audio.get_sample_size(FORMAT))
-    waveFile.setframerate(RATE)
-    waveFile.writeframes(b''.join(Recordframes))
-    waveFile.close()   
 
 if __name__ == '__main__':
-    app.run(port=8080, debug=True)
+    app.run(port=8080, debug=True,host="0.0.0.0")
